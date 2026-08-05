@@ -6,6 +6,7 @@ from typing import Optional
 
 from llm_client import LLMClient
 from doc_reader import extract_text
+from document_store import resolve_upload
 
 router = APIRouter()
 
@@ -33,15 +34,16 @@ def root():
 
 @router.post("/summarize")
 async def summarize_document(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    document_id: Optional[str] = Body(None),
     length: str = Body("medium"),
     language: str = Body("en"),
     llm_provider: Optional[str] = Body("anthropic"),
 ):
-    """Generate an AI summary of the uploaded document (PDF or DOCX)."""
-    content = await file.read()
+    """Generate an AI summary of a document — pass either `file` or a `document_id` from a prior upload."""
+    content, filename, _ = await resolve_upload(file, document_id)
     try:
-        text = extract_text(content, file.filename)
+        text = extract_text(content, filename)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -72,14 +74,15 @@ async def summarize_document(
 
 @router.post("/summarize-sections")
 async def summarize_sections(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    document_id: Optional[str] = Body(None),
     language: str = Body("en"),
     llm_provider: Optional[str] = Body("anthropic"),
 ):
-    """Generate per-section summaries with headings."""
-    content = await file.read()
+    """Generate per-section summaries with headings. Pass either `file` or a `document_id`."""
+    content, filename, _ = await resolve_upload(file, document_id)
     try:
-        text = extract_text(content, file.filename)
+        text = extract_text(content, filename)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

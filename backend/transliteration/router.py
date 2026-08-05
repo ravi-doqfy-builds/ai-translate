@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from typing import Optional
 
 from llm_client import LLMClient
+from document_store import resolve_upload
 
 router = APIRouter()
 
@@ -85,15 +86,15 @@ def root():
 
 @router.post("/transliterate-docx")
 async def transliterate_docx(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    document_id: Optional[str] = Body(None),
     target_script: str = Body("devanagari"),
     llm_provider: str = Body("anthropic"),
 ):
-    """Transliterate a DOCX file — convert script of each word without changing meaning."""
-    if not file.filename.lower().endswith(".docx"):
+    """Transliterate a DOCX file — convert script of each word without changing meaning. Pass either `file` or a `document_id`."""
+    content, filename, _ = await resolve_upload(file, document_id)
+    if not filename.lower().endswith(".docx"):
         raise HTTPException(status_code=400, detail="Only .docx files are supported.")
-
-    content = await file.read()
 
     from docx import Document
     from docx.oxml.ns import qn
@@ -190,15 +191,15 @@ async def transliterate_docx(
 
 @router.post("/transliterate-pdf")
 async def transliterate_pdf(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    document_id: Optional[str] = Body(None),
     target_script: str = Body("devanagari"),
     llm_provider: str = Body("anthropic"),
 ):
-    """Transliterate a PDF file — extract text, transliterate, return annotated PDF."""
-    if not file.filename.lower().endswith(".pdf"):
+    """Transliterate a PDF file — extract text, transliterate, return annotated PDF. Pass either `file` or a `document_id`."""
+    content, filename, _ = await resolve_upload(file, document_id)
+    if not filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only .pdf files are supported.")
-
-    content = await file.read()
 
     import fitz
 

@@ -8,6 +8,7 @@ from typing import Optional
 
 from llm_client import LLMClient
 from doc_reader import extract_text
+from document_store import resolve_upload
 
 router = APIRouter()
 
@@ -29,18 +30,19 @@ def _parse_json_response(raw: str) -> dict | list:
 
 @router.post("/extract")
 async def extract_fields(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    document_id: Optional[str] = Body(None),
     fields: str = Body(...),
     llm_provider: Optional[str] = Body("anthropic"),
 ):
     """
-    Extract specific named fields from a document.
+    Extract specific named fields from a document — pass either `file` or a `document_id`.
     `fields` is a JSON array of field names, e.g. '["borrower_name", "loan_amount"]'.
     Returns a JSON object with extracted values.
     """
-    content = await file.read()
+    content, filename, _ = await resolve_upload(file, document_id)
     try:
-        text = extract_text(content, file.filename)
+        text = extract_text(content, filename)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -80,14 +82,15 @@ async def extract_fields(
 
 @router.post("/extract-schema")
 async def extract_with_schema(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    document_id: Optional[str] = Body(None),
     schema: str = Body(...),
     llm_provider: Optional[str] = Body("anthropic"),
 ):
-    """Extract structured data using a JSON Schema definition."""
-    content = await file.read()
+    """Extract structured data using a JSON Schema definition. Pass either `file` or a `document_id`."""
+    content, filename, _ = await resolve_upload(file, document_id)
     try:
-        text = extract_text(content, file.filename)
+        text = extract_text(content, filename)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -123,13 +126,14 @@ async def extract_with_schema(
 
 @router.post("/extract-table")
 async def extract_tables(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    document_id: Optional[str] = Body(None),
     llm_provider: Optional[str] = Body("anthropic"),
 ):
-    """Extract all tables from the document as structured JSON."""
-    content = await file.read()
+    """Extract all tables from the document as structured JSON. Pass either `file` or a `document_id`."""
+    content, filename, _ = await resolve_upload(file, document_id)
     try:
-        text = extract_text(content, file.filename)
+        text = extract_text(content, filename)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

@@ -20,6 +20,7 @@ from fastapi.responses import StreamingResponse
 
 from llm_client import LLMClient
 from doc_reader import extract_text
+from document_store import resolve_upload
 from redact_engine import (
     redact_docx_by_highlight_color,
     redact_docx_by_phrases,
@@ -101,15 +102,14 @@ def root():
 
 @router.post("/redact-by-role")
 async def redact_by_role(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    document_id: Optional[str] = Form(None),
     role: str = Form(...),
     llm_provider: Optional[str] = Form("anthropic"),
 ):
-    """AI-powered role-based document redaction."""
-    content = await file.read()
-    fname = file.filename or "document"
-
-    mime_type = file.content_type or "application/octet-stream"
+    """AI-powered role-based document redaction. Pass either `file` or a `document_id`."""
+    content, filename, mime_type = await resolve_upload(file, document_id)
+    fname = filename or "document"
     print(f"[redact] redact-by-role | file={fname} | role={role} | flow={_FLOW} | provider={llm_provider}")
 
     # ── Bedrock path: vision-capable, sends PDF/image directly ────────────────
@@ -191,14 +191,15 @@ async def redact_by_role(
 
 @router.post("/redact-custom")
 async def redact_custom(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    document_id: Optional[str] = Form(None),
     mode: str = Form(...),             # "color" | "position"
     hex_color: Optional[str] = Form(None),
     positions_json: Optional[str] = Form(None),  # JSON string
 ):
-    """Custom document redaction by highlight colour or by position."""
-    content = await file.read()
-    fname = file.filename or "document"
+    """Custom document redaction by highlight colour or by position. Pass either `file` or a `document_id`."""
+    content, filename, _ = await resolve_upload(file, document_id)
+    fname = filename or "document"
     is_pdf = _is_pdf(content, fname)
 
     print(f"[redact] redact-custom | file={fname} | mode={mode} | is_pdf={is_pdf}")

@@ -8,6 +8,7 @@ from typing import Optional
 
 from llm_client import LLMClient
 from doc_reader import extract_text
+from document_store import resolve_upload
 
 router = APIRouter()
 
@@ -41,22 +42,24 @@ def root():
 
 @router.post("/compare")
 async def compare_documents(
-    file_a: UploadFile = File(...),
-    file_b: UploadFile = File(...),
+    file_a: Optional[UploadFile] = File(None),
+    file_b: Optional[UploadFile] = File(None),
+    document_id_a: Optional[str] = Body(None),
+    document_id_b: Optional[str] = Body(None),
     mode: str = Body("semantic"),
     llm_provider: Optional[str] = Body("anthropic"),
 ):
     """
-    Compare two documents.
+    Compare two documents — each side accepts either a `file` or a `document_id`.
     mode='text'     → line-level diff (no LLM)
     mode='semantic' → AI-powered semantic difference analysis
     """
-    content_a = await file_a.read()
-    content_b = await file_b.read()
+    content_a, filename_a, _ = await resolve_upload(file_a, document_id_a)
+    content_b, filename_b, _ = await resolve_upload(file_b, document_id_b)
 
     try:
-        text_a = extract_text(content_a, file_a.filename)
-        text_b = extract_text(content_b, file_b.filename)
+        text_a = extract_text(content_a, filename_a)
+        text_b = extract_text(content_b, filename_b)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -64,8 +67,8 @@ async def compare_documents(
         diff = _text_diff(text_a, text_b)
         return {
             "mode": "text",
-            "file_a": file_a.filename,
-            "file_b": file_b.filename,
+            "file_a": filename_a,
+            "file_b": filename_b,
             "diff": diff,
         }
 
@@ -83,8 +86,8 @@ async def compare_documents(
         f'  "removals_from_a": [<content present in A but not B>],\n'
         f'  "similarity_score": <0-100 integer>\n\n'
         f"Return ONLY the JSON object — no markdown, no explanation.\n\n"
-        f"=== DOCUMENT A ({file_a.filename}) ===\n{text_a[:6000]}\n\n"
-        f"=== DOCUMENT B ({file_b.filename}) ===\n{text_b[:6000]}"
+        f"=== DOCUMENT A ({filename_a}) ===\n{text_a[:6000]}\n\n"
+        f"=== DOCUMENT B ({filename_b}) ===\n{text_b[:6000]}"
     )
 
     try:
@@ -100,8 +103,8 @@ async def compare_documents(
 
     return {
         "mode": "semantic",
-        "file_a": file_a.filename,
-        "file_b": file_b.filename,
+        "file_a": filename_a,
+        "file_b": filename_b,
         "result": result,
         "provider": llm_provider,
     }
@@ -109,18 +112,20 @@ async def compare_documents(
 
 @router.post("/compare-versions")
 async def compare_versions(
-    original: UploadFile = File(...),
-    translated: UploadFile = File(...),
+    original: Optional[UploadFile] = File(None),
+    translated: Optional[UploadFile] = File(None),
+    document_id_original: Optional[str] = Body(None),
+    document_id_translated: Optional[str] = Body(None),
     source_language: str = Body("en"),
     target_language: str = Body("hi"),
 ):
-    """Compare original and translated document — check translation quality."""
-    content_orig = await original.read()
-    content_trans = await translated.read()
+    """Compare original and translated document — check translation quality. Each side accepts either a `file` or a `document_id`."""
+    content_orig, filename_orig, _ = await resolve_upload(original, document_id_original)
+    content_trans, filename_trans, _ = await resolve_upload(translated, document_id_translated)
 
     try:
-        text_orig = extract_text(content_orig, original.filename)
-        text_trans = extract_text(content_trans, translated.filename)
+        text_orig = extract_text(content_orig, filename_orig)
+        text_trans = extract_text(content_trans, filename_trans)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -155,8 +160,8 @@ async def compare_versions(
         raise HTTPException(status_code=500, detail=f"Comparison failed: {e}")
 
     return {
-        "original": original.filename,
-        "translated": translated.filename,
+        "original": filename_orig,
+        "translated": filename_trans,
         "source_language": source_language,
         "target_language": target_language,
         "result": result,

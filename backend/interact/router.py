@@ -1,7 +1,6 @@
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 
-import uuid
 import json
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import StreamingResponse
@@ -10,14 +9,12 @@ from typing import List, Optional
 
 from llm_client import LLMClient
 from doc_reader import extract_text
+from document_store import store as doc_store
 
 router = APIRouter()
 
 llm = LLMClient()
 print(f"[interact] service ready | flow={llm.flow}" + (f" | model={llm.model_id}" if llm.flow == "server" else ""))
-
-# In-memory document store: {doc_id: {"text": str, "filename": str}}
-_doc_store: dict = {}
 
 
 class ChatMessage(BaseModel):
@@ -39,7 +36,7 @@ def root():
 
 @router.post("/upload")
 async def upload_document(file: UploadFile = File(...)):
-    """Ingest a document for Q&A. Returns a document_id to use in /chat."""
+    """Ingest a document for Q&A. Returns a document_id usable across features."""
     content = await file.read()
     try:
         text = extract_text(content, file.filename)
@@ -49,8 +46,7 @@ async def upload_document(file: UploadFile = File(...)):
     if not text.strip():
         raise HTTPException(status_code=422, detail="Could not extract any text from the document.")
 
-    doc_id = str(uuid.uuid4())
-    _doc_store[doc_id] = {"text": text, "filename": file.filename}
+    doc_id = doc_store.put(file.filename, file.content_type, content, text)
     print(f"[Interact] Stored doc_id={doc_id}, filename={file.filename}, chars={len(text)}")
     return {"document_id": doc_id, "filename": file.filename, "char_count": len(text)}
 
@@ -58,7 +54,7 @@ async def upload_document(file: UploadFile = File(...)):
 @router.post("/chat")
 async def chat_with_document(request: ChatRequest):
     """Ask a question about a previously uploaded document."""
-    doc = _doc_store.get(request.document_id)
+    doc = doc_store.get(request.document_id)
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document '{request.document_id}' not found. Upload it first.")
 
@@ -96,7 +92,7 @@ async def chat_with_document(request: ChatRequest):
 @router.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
     """Stream chat response as Server-Sent Events."""
-    doc = _doc_store.get(request.document_id)
+    doc = doc_store.get(request.document_id)
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document '{request.document_id}' not found.")
 
@@ -142,7 +138,6 @@ async def chat_stream(request: ChatRequest):
 @router.delete("/document/{document_id}")
 async def delete_document(document_id: str):
     """Remove an ingested document from the store."""
-    if document_id not in _doc_store:
+    if not doc_store.delete(document_id):
         raise HTTPException(status_code=404, detail=f"Document '{document_id}' not found.")
-    del _doc_store[document_id]
     return {"deleted": document_id}

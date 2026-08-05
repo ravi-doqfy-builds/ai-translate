@@ -32,6 +32,8 @@ services:
         value: "${SARVAM_API_KEY}"
       - key: TRANSLATION_FLOW
         value: "${TRANSLATION_FLOW}"
+      - key: LLM_FLOW
+        value: "${LLM_FLOW}"
       - key: AWS_ACCESS_KEY_ID
         type: SECRET
         value: "${AWS_ACCESS_KEY_ID}"
