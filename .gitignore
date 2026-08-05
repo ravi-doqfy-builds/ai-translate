@@ -20,6 +20,9 @@ env/
 backend/.env
 .env.local
 
+# App Platform spec with real secret values filled in
+.do/app.yaml
+
 # Data / corrections
 backend/data/
 

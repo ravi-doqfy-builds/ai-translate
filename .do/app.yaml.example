@@ -1,0 +1,54 @@
+name: ai-translate-backend
+region: blr
+services:
+  - name: aiservice
+    github:
+      repo: suryaas27/ai-translate
+      branch: redact
+      deploy_on_push: true
+    source_dir: backend
+    dockerfile_path: backend/aiService/Dockerfile
+    http_port: 8080
+    instance_size_slug: basic-xs
+    instance_count: 1
+    health_check:
+      http_path: /health
+    routes:
+      - path: /
+    envs:
+      - key: ANTHROPIC_API_KEY
+        type: SECRET
+        value: "${ANTHROPIC_API_KEY}"
+      - key: ANTHROPIC_MODEL
+        value: "${ANTHROPIC_MODEL}"
+      - key: OPENAI_API_KEY
+        type: SECRET
+        value: "${OPENAI_API_KEY}"
+      - key: GEMINI_API_KEY
+        type: SECRET
+        value: "${GEMINI_API_KEY}"
+      - key: SARVAM_API_KEY
+        type: SECRET
+        value: "${SARVAM_API_KEY}"
+      - key: TRANSLATION_FLOW
+        value: "${TRANSLATION_FLOW}"
+      - key: AWS_ACCESS_KEY_ID
+        type: SECRET
+        value: "${AWS_ACCESS_KEY_ID}"
+      - key: AWS_SECRET_ACCESS_KEY
+        type: SECRET
+        value: "${AWS_SECRET_ACCESS_KEY}"
+      - key: AWS_DEFAULT_REGION
+        value: "${AWS_DEFAULT_REGION}"
+      - key: BEDROCK_MODEL
+        value: "${BEDROCK_MODEL}"
+      - key: AZURE_OPENAI_API_VERSION
+        value: "${AZURE_OPENAI_API_VERSION}"
+      - key: AZURE_DEPLOYMENT_NAME
+        value: "${AZURE_DEPLOYMENT_NAME}"
+      - key: VERTEX_LOCATION
+        value: "${VERTEX_LOCATION}"
+      - key: VERTEX_MODEL
+        value: "${VERTEX_MODEL}"
+      - key: GCP_PROJECT_ID
+        value: "${GCP_PROJECT_ID}"

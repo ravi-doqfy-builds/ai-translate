@@ -9,8 +9,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy aiService source
 COPY aiService/ ./aiService/
 
-# Copy translation-specific files (translators, reviewers, converters)
+# Copy each feature package main.py imports routers from
 COPY translation/ ./translation/
+COPY summary/ ./summary/
+COPY extract/ ./extract/
+COPY interact/ ./interact/
+COPY comparison/ ./comparison/
+COPY transliteration/ ./transliteration/
+COPY dynamic_fields/ ./dynamic_fields/
+COPY redact/ ./redact/
 
 # Copy fonts
 COPY fonts/ ./fonts/

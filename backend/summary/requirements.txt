@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+python-multipart
+python-dotenv
+anthropic
+openai
+google-genai
+boto3>=1.34.0
+botocore>=1.34.0
+pymupdf
+python-docx
