@@ -1,5 +1,6 @@
 import asyncio
-from fastapi import FastAPI, UploadFile, File, HTTPException, Body
+import logging
+from fastapi import APIRouter, FastAPI, UploadFile, File, HTTPException, Body
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -11,6 +12,8 @@ import tempfile
 import base64
 import io
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -36,6 +39,168 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- Versioned API Router ---
+api_v1 = APIRouter(prefix="/api/v1")
+
+
+# --- Chat / Interact Models ---
+class ChatMessage(BaseModel):
+    role: str          # "user" or "assistant"
+    content: str
+
+
+class ChatRequest(BaseModel):
+    messages: List[ChatMessage]
+    system: Optional[str] = None   # optional system prompt override
+    provider: Optional[str] = None  # pin to a specific provider; None = auto-fallback
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    provider: str      # which provider actually answered
+
+
+# --- Chat helpers (Gemini → OpenAI → Claude fallback) ---
+
+async def _chat_gemini(messages: List[ChatMessage], system: Optional[str]) -> str:
+    """Send a multi-turn chat via Gemini and return the reply text."""
+    from google import genai as google_genai
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise EnvironmentError("GEMINI_API_KEY not set")
+
+    client = google_genai.Client(api_key=api_key, http_options={"timeout": 120})
+
+    config: dict = {}
+    if system:
+        config["system_instruction"] = system
+
+    chat = client.chats.create(
+        model="gemini-2.0-flash",
+        config=config if config else None,
+    )
+
+    reply = ""
+    # Replay history up to (but not including) the last user message so the
+    # SDK maintains context, then send the final message.
+    for msg in messages[:-1]:
+        if msg.role == "user":
+            chat.send_message(msg.content)
+        # assistant turns are already tracked in chat history automatically
+
+    if messages:
+        response = chat.send_message(messages[-1].content)
+        reply = response.text.strip()
+
+    return reply
+
+
+async def _chat_openai(messages: List[ChatMessage], system: Optional[str]) -> str:
+    """Send a multi-turn chat via OpenAI and return the reply text."""
+    from openai import AsyncOpenAI
+
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise EnvironmentError("OPENAI_API_KEY not set")
+
+    client = AsyncOpenAI(api_key=api_key)
+
+    oai_messages = []
+    if system:
+        oai_messages.append({"role": "system", "content": system})
+    oai_messages.extend({"role": m.role, "content": m.content} for m in messages)
+
+    response = await client.chat.completions.create(
+        model="gpt-4o",
+        messages=oai_messages,
+        temperature=0.7,
+    )
+    return response.choices[0].message.content.strip()
+
+
+async def _chat_anthropic(messages: List[ChatMessage], system: Optional[str]) -> str:
+    """Send a multi-turn chat via Anthropic Claude and return the reply text."""
+    import anthropic as _anthropic
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise EnvironmentError("ANTHROPIC_API_KEY not set")
+
+    client = _anthropic.AsyncAnthropic(api_key=api_key)
+    model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5")
+
+    anthropic_messages = [{"role": m.role, "content": m.content} for m in messages]
+
+    kwargs: dict = {
+        "model": model,
+        "max_tokens": 4096,
+        "messages": anthropic_messages,
+    }
+    if system:
+        kwargs["system"] = system
+
+    response = await client.messages.create(**kwargs)
+    return response.content[0].text.strip()
+
+
+# Provider map — ordered: Gemini first, then OpenAI, then Claude
+_CHAT_PROVIDERS: dict = {
+    "gemini": _chat_gemini,
+    "openai": _chat_openai,
+    "anthropic": _chat_anthropic,
+}
+_CHAT_FALLBACK_ORDER: List[str] = ["gemini", "openai", "anthropic"]
+
+
+@api_v1.post("/interact/chat", response_model=ChatResponse)
+async def interact_chat(request: ChatRequest) -> ChatResponse:
+    """
+    Multi-turn chat endpoint.
+
+    - Default provider order: Gemini → OpenAI → Claude (first available key wins).
+    - Pass `provider` in the request body to pin to a specific one.
+    - On failure the next provider in the fallback chain is tried automatically.
+    """
+    if not request.messages:
+        raise HTTPException(status_code=400, detail="messages must not be empty")
+
+    # Determine which providers to try
+    if request.provider:
+        provider_key = request.provider.lower()
+        if provider_key not in _CHAT_PROVIDERS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown provider '{request.provider}'. Valid: {list(_CHAT_PROVIDERS)}"
+            )
+        order = [provider_key]
+    else:
+        order = _CHAT_FALLBACK_ORDER
+
+    last_error: Exception = RuntimeError("No providers available")
+
+    for provider_name in order:
+        handler = _CHAT_PROVIDERS[provider_name]
+        try:
+            reply = await handler(request.messages, request.system)
+            logger.info("[Chat] Responded via %s", provider_name)
+            return ChatResponse(reply=reply, provider=provider_name)
+        except EnvironmentError as exc:
+            # API key not configured — silently skip to next provider
+            logger.debug("[Chat] %s skipped (no key): %s", provider_name, exc)
+            last_error = exc
+        except Exception as exc:
+            logger.warning("[Chat] %s failed: %s", provider_name, exc)
+            last_error = exc
+
+    raise HTTPException(
+        status_code=503,
+        detail=f"All chat providers failed or are unconfigured. Last error: {last_error}",
+    )
+
+
+app.include_router(api_v1)
 
 # --- Google Translate Client ---
 translate_client = None
