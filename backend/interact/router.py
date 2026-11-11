@@ -26,7 +26,7 @@ class ChatRequest(BaseModel):
     document_id: str
     question: str
     history: List[ChatMessage] = []
-    llm_provider: Optional[str] = "anthropic"
+    llm_provider: Optional[str] = "gemini"
 
 
 @router.get("/")
@@ -78,7 +78,7 @@ async def chat_with_document(request: ChatRequest):
     )
 
     try:
-        answer = llm.call(system, user, provider=request.llm_provider or "anthropic")
+        answer = llm.call(system, user, provider=request.llm_provider or "gemini")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM call failed: {e}")
 
@@ -116,7 +116,7 @@ async def chat_stream(request: ChatRequest):
 
     def generate():
         try:
-            for token in llm.stream(system, user, provider=request.llm_provider or "anthropic"):
+            for token in llm.stream(system, user, provider=request.llm_provider or "gemini"):
                 print(f"[Stream] token: {repr(token[:20])}")
                 yield f"data: {json.dumps({'token': token})}\n\n"
         except Exception as e:

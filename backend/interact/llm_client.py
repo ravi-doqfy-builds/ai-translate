@@ -78,8 +78,16 @@ class LLMClient:
             yield from self._stream_gemini(system, user)
         elif provider == "openai":
             yield from self._stream_openai(system, user)
-        else:
+        elif provider == "anthropic":
             yield from self._stream_anthropic(system, user)
+        else:
+            # Unknown provider — cascade through available keys: gemini → openai → anthropic
+            if os.getenv("GEMINI_API_KEY"):
+                yield from self._stream_gemini(system, user)
+            elif os.getenv("OPENAI_API_KEY"):
+                yield from self._stream_openai(system, user)
+            else:
+                yield from self._stream_anthropic(system, user)
 
     def _stream_anthropic(self, system: str, user: str):
         import anthropic
@@ -151,6 +159,13 @@ class LLMClient:
         if provider == "gemini":
             return self._call_gemini(system, user)
         if provider == "openai":
+            return self._call_openai(system, user)
+        if provider == "anthropic":
+            return self._call_anthropic(system, user)
+        # Unknown provider — cascade through available keys: gemini → openai → anthropic
+        if os.getenv("GEMINI_API_KEY"):
+            return self._call_gemini(system, user)
+        if os.getenv("OPENAI_API_KEY"):
             return self._call_openai(system, user)
         return self._call_anthropic(system, user)
 
